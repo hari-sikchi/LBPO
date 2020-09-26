@@ -1,0 +1,13 @@
+models/*
+safety_results/*
+wandb/*
+lyapunov/wandb/*
+lagrangian/wandb/*
+on_policy_safety/data/*
+__pycache__/
+data/*
+*/__pycache__/
+*.py[cod]
+*$py.class
+
+
