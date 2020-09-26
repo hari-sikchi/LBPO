@@ -523,7 +523,7 @@ if __name__ == '__main__':
     parser.add_argument('--l', type=int, default=2)
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--beta', type=float, default=0.01)
-    parser.add_argument('--beta_thres', type=float, default=1.0)
+    parser.add_argument('--beta_thres', type=float, default=0.05)
     parser.add_argument('--cost_lim', type=float, default=25.0)
     parser.add_argument('--target_l2', type=float, default=0.012)
     parser.add_argument('--seed', '-s', type=int, default=0)
