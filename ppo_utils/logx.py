@@ -1,7 +1,5 @@
 """
 
-Some simple logging functionality, inspired by rllab's logging.
-
 Logs to a tab-separated-values file (path/to/output_directory/progress.txt)
 
 """
@@ -31,8 +29,6 @@ color2num = dict(
 def colorize(string, color, bold=False, highlight=False):
     """
     Colorize a string.
-
-    This function was originally written by John Schulman.
     """
     attr = []
     num = color2num[color]
@@ -261,14 +257,6 @@ class Logger:
             os.makedirs(fpath, exist_ok=True)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                # We are using a non-recommended way of saving PyTorch models,
-                # by pickling whole objects (which are dependent on the exact
-                # directory structure at the time of saving) as opposed to
-                # just saving network weights. This works sufficiently well
-                # for the purposes of Spinning Up, but you may want to do 
-                # something different for your personal PyTorch project.
-                # We use a catch_warnings() context to avoid the warnings about
-                # not being able to save the source code.
                 torch.save(self.pytorch_saver_elements, fname)
 
 

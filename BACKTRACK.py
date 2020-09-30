@@ -3,13 +3,13 @@
 Code build on top of PPO from the spinning-up repository.
 '''
 import numpy as np
-import torch
-from torch.optim import Adam
 import gym
 import time
 import  core
 import sys
 import safety_gym
+import torch
+from torch.optim import Adam
 import torch.nn.functional as F
 from torch.autograd import Variable
 from ppo_utils.logx import EpochLogger
@@ -34,6 +34,8 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
     Args:
         env_fn : A function which creates a copy of the environment.
             The environment must satisfy the OpenAI Gym API.
+
+        env_name : Name of the environment
 
         actor_critic: The constructor method for a PyTorch Module with a 
             ``step`` method, an ``act`` method, a ``pi`` module, and a ``v`` 
@@ -127,6 +129,8 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
         save_freq (int): How often (in terms of gap between epochs) to save
             the current policy and value function.
 
+        target_l2 (float): Hard constraint on KL or a trust region constraint.
+
     """
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
@@ -193,7 +197,6 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
                 max_backtracks=10,
                 accept_ratio=.1):
         fval = f().data
-        # print("fval before", fval.item())
         for (_n_backtracks, stepfrac) in enumerate(.5**np.arange(max_backtracks)):
             xnew = x + stepfrac * fullstep
             set_flat_params_to(model, xnew)
@@ -201,9 +204,7 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
             actual_improve = fval - newfval
             expected_improve = expected_improve_rate * stepfrac
             ratio = actual_improve / expected_improve
-            # print("a/e/r", actual_improve.item(), expected_improve.item(), ratio.item())
             if ratio.item() > accept_ratio and actual_improve.item() > 0:
-                # print("fval after", newfval.item())
                 return True, xnew
         return False, x
 
@@ -228,15 +229,11 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
             return flat_grad_grad_kl + v * damping
 
         stepdir = conjugate_gradients(Fvp, -loss_grad, 10)
-
         shs = 0.5 * (stepdir * Fvp(stepdir)).sum(0, keepdim=True)
-
         lm = torch.sqrt(shs / max_kl)
         fullstep = stepdir / lm[0]
-
         neggdotstepdir = (-loss_grad * stepdir).sum(0, keepdim=True)
         print(("lagrange multiplier:", lm[0], "grad_norm:", loss_grad.norm()))
-
         prev_params = get_flat_params_from(model)
         success, new_params = linesearch(model, get_loss, prev_params, fullstep,
                                         neggdotstepdir / lm[0])
@@ -273,15 +270,9 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
 
         
         old_mean = ac.pi(obs).detach().data
-
-
-        loss_pi = trust_region_step(ac.pi, get_loss_pi, get_kl, target_l2, 0.1)
-        
-        approx_l2 = torch.sqrt(torch.mean((ac.pi(obs) - data['old_act'])**2)).item()
-        
+        loss_pi = trust_region_step(ac.pi, get_loss_pi, get_kl, target_l2, 0.1)  
+        approx_l2 = torch.sqrt(torch.mean((ac.pi(obs) - data['old_act'])**2)).item()   
         approx_kl = get_kl(old_mean = old_mean, new_mean=ac.pi(obs).detach()).mean().item()
-
-        # ent = pi.entropy().mean().item()
         ent = 0
         clipped = [0]
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
@@ -293,7 +284,6 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
     def compute_loss_v(data):
         obs, act, ret = data['obs'], data['act'], data['ret']
         return ((ac.Qv1(torch.cat((obs,act),dim=1)) - ret)**2).mean(), ((ac.Qv2(torch.cat((obs,act),dim=1)) - ret)**2).mean()
-        # return ((ac.v(obs) - ret)**2).mean()
 
     # Set up function for computing value loss
     def compute_loss_j(data):
@@ -314,14 +304,11 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
     logger.setup_pytorch_saver(ac)
 
 
-
     def update(epoch_no):
-        # global soft_penalty, penalty_optimizer
         data = buf.get()
 
         # Update the penalty
         curr_cost = logger.get_stats('EpCostRet')[0]
-
 
         if curr_cost-cost_lim>0:
             logger.log('Warning! Safety constraint is already violated.', 'red')
@@ -331,8 +318,6 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
             ac.baseline_pi = copy.deepcopy(ac.pi)
             ac.baseline_Qj = copy.deepcopy(ac.Qj1)
             
-        
-
         pi_l_old, v_l_old, j_l_old = 0, 0, 0
         pi_info_old = dict(kl=0,l2=0, ent=0, cf=0)
 
@@ -406,7 +391,6 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
         for t in range(local_steps_per_epoch):
             a, v, j, logp = ac.step(torch.as_tensor(o, dtype=torch.float32))
             noise = 0.05 * np.random.randn(*a.shape)
-            # print("Action: {}".format(a+noise))
             a = a + noise
             next_o, r, d, info = env.step(a)
             ep_ret += r
@@ -415,7 +399,6 @@ def BACKTRACK(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kw
 
             # save and log
             buf.store(o, a, r, info.get('cost', 0), v, j, logp, a)
-            # td3_buf.add(o, a,next_o, r, info.get('cost', 0),d)
             logger.store(VVals=v, JVals = j)
             
             # Update obs (critical!)

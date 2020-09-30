@@ -44,8 +44,7 @@ def setup_logger_kwargs(exp_name, seed=None, data_dir=None, datestamp=False):
 
         output_dir = data_dir/YY-MM-DD_exp_name/YY-MM-DD_HH-MM-SS_exp_name_s[seed]
 
-    You can force datestamp=True by setting ``FORCE_DATESTAMP=True`` in 
-    ``spinup/user_config.py``. 
+ 
 
     Args:
 
@@ -95,11 +94,6 @@ def call_experiment(exp_name, thunk, seed=0, num_cpu=1, data_dir=None,
     to run many experiments in sequence, including logger configuration and
     splitting into multiple processes for MPI. 
 
-    There's also a SpinningUp-specific convenience added into executing the
-    thunk: if ``env_name`` is one of the kwargs passed to call_experiment, it's
-    assumed that the thunk accepts an argument called ``env_fn``, and that
-    the ``env_fn`` should make a gym environment with the given ``env_name``. 
-
     The way the experiment is actually executed is slightly complicated: the
     function is serialized to a string, and then ``run_entrypoint.py`` is
     executed in a subprocess call with the serialized string as an argument.
@@ -120,8 +114,7 @@ def call_experiment(exp_name, thunk, seed=0, num_cpu=1, data_dir=None,
             the machine.
 
         data_dir (string): Used in configuring the logger, to decide where
-            to store experiment results. Note: if left as None, data_dir will
-            default to ``DEFAULT_DATA_DIR`` from ``spinup/user_config.py``. 
+            to store experiment results. 
 
         **kwargs: All kwargs to pass to thunk.
 
@@ -218,9 +211,6 @@ def valid_str(v):
     """ 
     Convert a value or values to a string which could go in a filepath.
 
-    Partly based on `this gist`_.
-
-    .. _`this gist`: https://gist.github.com/seanh/93666
 
     """
     if hasattr(v, '__name__'):

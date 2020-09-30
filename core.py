@@ -1,7 +1,6 @@
 import numpy as np
 import scipy.signal
 from gym.spaces import Box, Discrete
-
 import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
@@ -30,8 +29,6 @@ def count_vars(module):
 
 def discount_cumsum(x, discount):
     """
-    magic from rllab for computing discounted cumulative sums of vectors.
-
     input: 
         vector x, 
         [x0, 
@@ -184,12 +181,8 @@ class MLPActorCriticTD3trust(nn.Module):
                         /(torch.sum(grad_baseline_action*grad_baseline_action,dim=1).view(-1,1)+1e-6))
 
 
-        # lambda_star = lambda_star/lambda_star.norm()
-        # lr = 0.01
-        update = torch.clamp(lambda_star*grad_baseline_action,-max_step_size,max_step_size)
-        # update = torch.min(lambda_star*grad_baseline_action, torch.Tensor([max_step_size]))
-        # update = update/ (update.norm(dim=1).view(-1,1)+1e-6)
 
+        update = torch.clamp(lambda_star*grad_baseline_action,-max_step_size,max_step_size)
         corrected_action = act - update
 
         return corrected_action     
@@ -244,7 +237,6 @@ class MLPActorCriticTD3trustCQL(nn.Module):
 
 
     def act_with_correction(self,pi,obs,max_step_size):
-        # import ipdb; ipdb.set_trace()
         act = pi(obs)
         mixing_parameter = 0.0
         baseline_action = self.baseline_pi(obs)
@@ -274,11 +266,9 @@ class MLPActorCriticTD3trustCQL(nn.Module):
                         /(torch.sum(grad_baseline_action*grad_baseline_action,dim=1).view(-1,1)+1e-6))
 
 
-        # lambda_star = lambda_star/lambda_star.norm()
-        # lr = 0.01
+
         update = torch.clamp(lambda_star*grad_baseline_action,-max_step_size,max_step_size)
-        # update = torch.min(lambda_star*grad_baseline_action, torch.Tensor([max_step_size]))
-        # update = update/ (update.norm(dim=1).view(-1,1)+1e-6)
+
 
         corrected_action = act - update
 
@@ -313,7 +303,6 @@ class MLPActorCriticTD3(nn.Module):
 
         # build value function
         self.Qv  = MLPCritic(obs_dim+act_dim, hidden_sizes, activation)
-        # self.j  = MLPCritic(obs_dim, hidden_sizes, activation)
         self.Qj  = MLPCritic(obs_dim+act_dim, hidden_sizes, activation)
 
         self.baseline_Qj = copy.deepcopy(self.Qj)
@@ -323,7 +312,6 @@ class MLPActorCriticTD3(nn.Module):
 
 
     def act_with_correction(self,pi,obs,max_step_size):
-        # import ipdb; ipdb.set_trace()
         act = pi(obs)
         mixing_parameter = 0.0
         baseline_action = self.baseline_pi(obs)
@@ -347,10 +335,9 @@ class MLPActorCriticTD3(nn.Module):
                         /(torch.sum(grad_baseline_action*grad_baseline_action,dim=1).view(-1,1)+1e-6))
 
 
-        # lambda_star = lambda_star/lambda_star.norm()
-        # lr = 0.01
+
         update = torch.min(lambda_star*grad_baseline_action, torch.Tensor([max_step_size]))
-        # update = update/ (update.norm(dim=1).view(-1,1)+1e-6)
+
 
         corrected_action = act - update
 
@@ -418,7 +405,6 @@ class MLPActorCriticLyapunov(nn.Module):
         self.pi_mix = copy.deepcopy(self.pi)
         # build value function
         self.v  = MLPCritic(obs_dim, hidden_sizes, activation)
-        # self.j  = MLPCritic(obs_dim, hidden_sizes, activation)
         self.Qj  = MLPCritic(obs_dim+act_dim, hidden_sizes, activation)
 
         self.baseline_Qj = copy.deepcopy(self.Qj)
@@ -450,10 +436,8 @@ class MLPActorCriticLyapunov(nn.Module):
                         /(torch.sum(grad_baseline_action*grad_baseline_action,dim=1).view(-1,1)+1e-6))
 
 
-        # lambda_star = lambda_star/lambda_star.norm()
-        # lr = 0.01
         update = torch.min(lambda_star*grad_baseline_action, torch.Tensor([max_step_size]))
-        # update = update/ (update.norm(dim=1).view(-1,1)+1e-6)
+
 
         corrected_action = act - update
 
@@ -472,7 +456,7 @@ class MLPActorCriticLyapunov(nn.Module):
         self.baseline_Qj.zero_grad()
 
         # Find the gradient of cost critic with respect to action on baseline action
-        # import ipdb; ipdb.set_trace()
+
         obs_act = torch.cat((obs, baseline_action),dim=1)
         obs_act = obs_act.requires_grad_(True)
         cost = self.baseline_Qj(obs_act).sum()
@@ -481,19 +465,18 @@ class MLPActorCriticLyapunov(nn.Module):
         grad_baseline_action = obs_act.grad[:,-self.act_dim:].detach() 
 
         baseline_action = baseline_action.detach()
-        # import ipdb; ipdb.set_trace()
+
 
         lambda_star = F.relu(((1 - mixing_parameter) * torch.sum(grad_baseline_action * (act-baseline_action),dim=1).view(-1,1) - self.epsilon)\
                         /(torch.sum(grad_baseline_action*grad_baseline_action,dim=1)).view(-1,1))
 
 
-        # lambda_star = lambda_star/lambda_star.norm()
         lr = 0.01
         update = lambda_star*grad_baseline_action
         update = update/ (update.norm(dim=1).view(-1,1)+1e-6)
 
         corrected_action = act - lr*update
-        # pi = self.pi._distribution(obs)
+
         logp = self.pi._log_prob_from_distribution(pi, act)
 
         return corrected_action, logp
@@ -518,7 +501,6 @@ class MLPActorCriticLyapunov(nn.Module):
         # Find the gradient of cost critic with respect to action on baseline action
         cost = self.baseline_Qj(obs_act).sum()
         cost.backward(retain_graph=True)
-        # import ipdb; ipdb.set_trace()
         grad_baseline_action = obs_act.grad.detach()[-self.act_dim:] 
         
         baseline_action = baseline_action.detach().cpu().numpy()
@@ -528,18 +510,13 @@ class MLPActorCriticLyapunov(nn.Module):
         lambda_star = F.relu((torch.sum(grad_baseline_action.view(1,-1) * (a_np-baseline_action).reshape(1,-1),dim=1).view(1,-1) - self.epsilon)/(torch.sum(grad_baseline_action.view(1,-1)*grad_baseline_action.view(1,-1),dim=1)).view(1,-1))
 
 
-        # lambda_star = F.relu(((1 - mixing_parameter) * torch.sum(grad_baseline_action.view(1,-1) * (a_np-baseline_action).reshape(1,-1),dim=1).view(1,-1) - self.epsilon)\
-        #                 /(torch.sum(grad_baseline_action.view(-1,1)*grad_baseline_action.view(-1,1),dim=1)).view(-1,1))
-
 
         lr = 0.05
         update = lambda_star*grad_baseline_action
         update = update/ (update.norm(dim=1).view(-1,1)+1e-6)
         corrected_action = act - lr*update
-        # corrected_action = a_np - lambda_star*grad_baseline_action
         pi = self.pi._distribution(obs)
         logp = self.pi._log_prob_from_distribution(pi, corrected_action)
-        # import ipdb; ipdb.set_trace()
         return corrected_action.view(-1), logp
 
 
@@ -550,7 +527,6 @@ class MLPActorCriticLyapunov(nn.Module):
         a = pi.sample()
         logp_a = self.pi._log_prob_from_distribution(pi, a)
         v = self.v(obs)
-        # j = self.j(obs)
         qj = self.Qj(torch.cat((obs,a)))
         
         

@@ -3,13 +3,13 @@ Code build on top of PPO from the spinning-up repository.
 '''
 
 import numpy as np
-import torch
-from torch.optim import Adam
 import gym
 import time
 import  core
 import sys
 import safety_gym
+import torch
+from torch.optim import Adam
 import torch.nn.functional as F
 from torch.autograd import Variable
 from ppo_utils.logx import EpochLogger
@@ -27,13 +27,13 @@ def LBPO(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kwargs=
         vf_lr=1e-3, jf_lr=1e-3, penalty_init=1., penalty_lr=5e-2, cost_lim=25, train_pi_iters=80, train_v_iters=80, lam=0.97, max_ep_len=1000,
         target_kl=0.01, target_l2=0.012, logger_kwargs=dict(), save_freq=10, beta=0.01, beta_thres=0.05):
     """
-    Proximal Policy Optimization (by clipping), 
-
-    with early stopping based on approximate KL
+    Lyapunov Barrier Policy Optimization
 
     Args:
         env_fn : A function which creates a copy of the environment.
             The environment must satisfy the OpenAI Gym API.
+
+        env_name : Name of the environment
 
         actor_critic: The constructor method for a PyTorch Module with a 
             ``step`` method, an ``act`` method, a ``pi`` module, and a ``v`` 
@@ -127,6 +127,14 @@ def LBPO(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kwargs=
         save_freq (int): How often (in terms of gap between epochs) to save
             the current policy and value function.
 
+        cost_lim (float): Cumulative constraint threshold that we want the agent to respect.
+
+        target_l2 (float): Hard constraint on KL or a trust region constraint.
+
+        beta(float): Barrier parameter to control the amount of risk aversion.
+
+        beta(thres): Barrier parameter for gradient clipping. Set to 0.05
+
     """
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
@@ -151,6 +159,7 @@ def LBPO(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kwargs=
         ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     else:
         ac = torch.load('safe_initial_policies/'+env_name+'.pt')
+
     # Sync params across processes
     sync_params(ac)
 
@@ -181,21 +190,14 @@ def LBPO(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kwargs=
                                             ac.baseline_pi.parameters(), ac.pi_mix.parameters()):
                     target_param.data.copy_((ls_alpha)*param1.data + (1-ls_alpha) * param2.data)
             
-            # target l2 might not be necessary here
             mix_act = ac.act_pi(ac.pi_mix, obs).detach()
-
-            # Need projection layer here
             epsilon_observed = ac.Qj1(torch.cat((obs,mix_act),dim=1)) - ac.Qj1(torch.cat((obs,ac.baseline_pi(obs)),dim=1))
-            
-            
-            # Try max/mean
             if epsilon_observed.mean()<=epsilon or step == max_steps-1:
                 for param, target_param in zip(ac.pi_mix.parameters(),
                                              ac.pi.parameters()):
                     target_param.data.copy_(param.data)
                 
                 break
-
         return ls_alpha
 
     def conjugate_gradients(Avp, b, nsteps, residual_tol=1e-10):
@@ -232,9 +234,7 @@ def LBPO(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kwargs=
             actual_improve = fval - newfval
             expected_improve = expected_improve_rate * stepfrac
             ratio = actual_improve / expected_improve
-            # print("a/e/r", actual_improve.item(), expected_improve.item(), ratio.item())
             if ratio.item() > accept_ratio and actual_improve.item() > 0:
-                # print("fval after", newfval.item())
                 return True, xnew
         return False, x
 
@@ -298,17 +298,17 @@ def LBPO(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kwargs=
             if ac.epsilon<0:
                 loss_pi =  (ac.Qj1(torch.cat((obs, ac.pi(obs)),dim=1))).mean()
             else:
+                # Surrogate objective that matches the gradient of the barrier at \pi=\pi_B
                 if (beta/ac.epsilon)-beta_thres>0:
                     loss_pi =  - (ac.Qv1(torch.cat((obs, ac.pi(obs)),dim=1))).mean() + \
                                 (beta/ac.epsilon)*ac.Qj1(torch.cat((obs, ac.pi(obs)),dim=1)).mean()
                 else:
                     loss_pi = - (ac.Qv1(torch.cat((obs, ac.pi(obs)),dim=1))).mean()
+            
             return loss_pi
 
         
         old_mean = ac.pi(obs).detach().data
-
-
         loss_pi = trust_region_step(ac.pi, get_loss_pi, get_kl, target_l2, 0.1)
         
         if ac.epsilon>=0:
@@ -322,10 +322,8 @@ def LBPO(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kwargs=
             logger.store(AlphaMix = -1)
             logger.store(CostGradWeight = -1)
         # Useful extra info
-        approx_l2 = torch.sqrt(torch.mean((ac.pi(obs) - data['old_act'])**2)).item()
-        
+        approx_l2 = torch.sqrt(torch.mean((ac.pi(obs) - data['old_act'])**2)).item()        
         approx_kl = get_kl(old_mean = old_mean, new_mean=ac.pi(obs).detach()).mean().item()
-
         ent = 0
         clipped = [0]
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
@@ -356,18 +354,14 @@ def LBPO(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kwargs=
     logger.setup_pytorch_saver(ac)
 
 
-
     def update(epoch_no, constraint_violations, constraint_violations_count):
         # global soft_penalty, penalty_optimizer
         data = buf.get()
 
         # Update the penalty
         curr_cost = logger.get_stats('EpCostRet')[0]
-
-
+        
         if curr_cost-cost_lim>0:
-            constraint_violations_count.append(1)
-            constraint_violations.append(curr_cost-cost_lim)
             logger.log('Warning! Safety constraint is already violated.', 'red')
 
         ac.epsilon = (1-gamma)*(cost_lim-curr_cost)
@@ -513,7 +507,6 @@ def LBPO(env_fn, env_name = '', actor_critic=core.MLPActorCriticCost, ac_kwargs=
         logger.log_tabular('Time', time.time()-start_time)
         logger.dump_tabular()
 
-    print("Total constraint violations were: {} with total violation cost: {}".format(sum(constraint_violations_count), sum(constraint_violations)))
 
 if __name__ == '__main__':
     import argparse
