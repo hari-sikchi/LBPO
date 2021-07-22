@@ -10,7 +10,6 @@ If you use this code in your research project please cite us as:
   journal={arXiv preprint arXiv:2103.09230},
   year={2021}
 }
-{"mode":"full","isActive":false}
 ```
 
 
