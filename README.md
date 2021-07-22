@@ -1,6 +1,19 @@
 # Lyapunov Barrier Policy Optimization
 
-In submission to ICLR 2021. This code reproduces the results for our method and baselines showed in the paper.
+This code reproduces the results for our method and baselines showed in the paper.[[ArXiv]](https://arxiv.org/abs/2103.09230).
+
+If you use this code in your research project please cite us as:
+```
+@article{sikchi2021lyapunov,
+  title={Lyapunov barrier policy optimization},
+  author={Sikchi, Harshit and Zhou, Wenxuan and Held, David},
+  journal={arXiv preprint arXiv:2103.09230},
+  year={2021}
+}
+{"mode":"full","isActive":false}
+```
+
+
 
 ## Install
 - PyTorch 1.5
